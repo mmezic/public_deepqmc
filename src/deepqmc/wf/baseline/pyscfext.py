@@ -19,6 +19,11 @@ def pyscf_from_mol(mol, basis, cas=None, **kwargs):
     Returns:
         tuple: the pyscf molecule and the SCF calculation object.
     """
+    for atomic_number in mol.charges[jnp.invert(mol.pp_mask)].tolist():
+        assert atomic_number not in mol.charges[mol.pp_mask], (
+            'Usage of different pseudopotentials for atoms of the same element is not'
+            ' implemented for pretraining.'
+        )
     mol = gto.M(
         atom=mol.as_pyscf(),
         unit='bohr',
@@ -27,6 +32,12 @@ def pyscf_from_mol(mol, basis, cas=None, **kwargs):
         spin=mol.spin,
         cart=True,
         parse_arg=False,
+        ecp=dict(
+            zip(
+                mol.charges[mol.pp_mask].astype(int).tolist(),
+                [mol.pp_type] * int(mol.pp_mask.sum()),
+            )
+        ),
         verbose=0,
         **kwargs,
     )
