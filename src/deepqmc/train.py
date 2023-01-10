@@ -179,7 +179,9 @@ def train(  # noqa: C901
                     pbar.set_postfix(MSE=f'{ewm_state.mean:0.2e}')
                     pretrain_stats = {'MSE': loss.item(), 'MSE/ewm': ewm_state.mean}
                     if workdir:
-                        update_tensorboard_writer(writer, step, pretrain_stats)
+                        update_tensorboard_writer(
+                            writer, step, pretrain_stats, prefix='pretraining'
+                        )
                 log.info(f'Pretraining completed with MSE = {ewm_state.mean:0.2e}')
             smpl_state = sampler.init(
                 rng, partial(ansatz.apply, params), sample_size, state_callback
