@@ -59,26 +59,30 @@ def local_potential(rs, mol):
     dists = pairwise_distance(rs, mol.coords)
     Z_eff = mol.charges - mol.ns_core  # effective charge of the nuclei
     effective_coulomb_potential = -(Z_eff / dists).sum(axis=(-1, -2))
-    params = mol.pp_loc_params
+    loc_params = mol.pp_loc_params
     idxs = mol.pp_mask  # indices of atoms for whom we use pseudopotential
+
+    r_en = dists[:, idxs]  # electron-nucleus distances for all electrons and PP nuclei
+
+    # eq. (4) from [Burkatzki et al. 2007]
+    coulomb_term = jnp.einsum(
+        'ij,ki->kji', loc_params[idxs, 0, 1, :], 1 / r_en
+    ) * jnp.exp(jnp.einsum('ij,ki->kji', -loc_params[idxs, 0, 0, :], r_en**2))
+    const_term = jnp.einsum(
+        'ij,kji->kji',
+        loc_params[idxs, 1, 1, :],
+        jnp.exp(jnp.einsum('ij,ki->kji', -loc_params[idxs, 1, 0, :], r_en**2)),
+    )
+    linear_term = jnp.einsum('ij,ki->kji', loc_params[idxs, 2, 1, :], r_en) * jnp.exp(
+        jnp.einsum('ij,ki->kji', -loc_params[idxs, 2, 0, :], r_en**2)
+    )
+
     # Summation is carried over:
     # - individual cores in the molecule (idxs dimension)
     # - individual electrons (1st dimension of 'dists')
     # - potentially over different coeffs for the term of the same type (ccECP case)
+    pseudopotential = (coulomb_term + const_term + linear_term).sum(axis=(-1, -2, -3))
 
-    pseudopotential = (
-        jnp.einsum('ij,ki->kji', params[idxs, 0, 1, :], 1 / dists[:, idxs])
-        * jnp.exp(jnp.einsum('ij,ki->kji', -params[idxs, 0, 0, :], dists[:, idxs] ** 2))
-        + jnp.einsum(
-            'ij,kji->kji',
-            params[idxs, 1, 1, :],
-            jnp.exp(
-                jnp.einsum('ij,ki->kji', -params[idxs, 1, 0, :], dists[:, idxs] ** 2)
-            ),
-        )
-        + jnp.einsum('ij,ki->kji', params[idxs, 2, 1, :], dists[:, idxs])
-        * jnp.exp(jnp.einsum('ij,ki->kji', -params[idxs, 2, 0, :], dists[:, idxs] ** 2))
-    ).sum(axis=(-1, -2, -3))
     return effective_coulomb_potential + pseudopotential
 
 
