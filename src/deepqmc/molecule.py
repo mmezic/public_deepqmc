@@ -7,49 +7,12 @@ from typing import ClassVar
 
 import jax.numpy as jnp
 import yaml
-from pyscf import gto
+
+from deepqmc.wf.baseline.pyscfext import load_pp_param
 
 angstrom = 1 / 0.52917721092
 
 __all__ = ['Molecule']
-
-
-def load_pp_param(charge, pp_type):
-    # Loads the pseudopotential parameters for an atom (given by 'charge' argument) from
-    # the pyscf package and parses them to jnp arrays.
-    data = next(
-        iter(
-            gto.M(
-                atom=[
-                    (int(charge), jnp.array([0, 0, 0])),
-                ],
-                spin=charge % 2,
-                basis='6-31G',
-                ecp=pp_type,
-            )._ecp.values()
-        )
-    )
-    n_core = data[0]
-    pp_loc_param = data[1][0][1][1:4]
-    # Pad parameters with zeros to store them in single jnp.array
-    pad = len(max(pp_loc_param, key=len))
-    # The fixed padding is probably not the most efficient way,
-    # (it might cause some unnecessary multiplication by zero)
-    pad = 2
-
-    pp_loc_param = jnp.array(
-        [one_param + [[0, 0]] * (pad - len(one_param)) for one_param in pp_loc_param]
-    )
-    pp_loc_param = jnp.swapaxes(
-        pp_loc_param, -1, -2
-    )  # Shape: (r^n term, coefficient (β) & exponent (α), no. of terms with the same n)
-
-    pp_nl_coef = []
-    for i in range(len(data[1]) - 1):
-        # creates a list of non-local parameters; its length is the number of projectors
-        pp_nl_coef.append(jnp.swapaxes(jnp.array(data[1][i + 1][1][2]), -1, -2))
-    pp_nl_param = jnp.asarray(pp_nl_coef)
-    return n_core, pp_loc_param, pp_nl_param
 
 
 def get_shell(z):
