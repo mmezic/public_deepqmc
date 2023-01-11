@@ -8,7 +8,7 @@ from typing import ClassVar
 import jax.numpy as jnp
 import yaml
 
-from deepqmc.wf.baseline.pyscfext import load_pp_param
+from deepqmc.wf.baseline.pyscfext import parse_pp_params
 
 angstrom = 1 / 0.52917721092
 
@@ -87,7 +87,6 @@ class Molecule:
     # stores the parameters of local potential (loaded from [Burkatzki et al. 2007])
     pp_loc_params: jnp.ndarray
     # stores the parameters of non-local potential part
-    # (loaded from [Burkatzki et al. 2007])
     pp_nl_params: list
     # True if at leas one nucleus uses pseudopotential
     any_pp: bool
@@ -110,11 +109,10 @@ class Molecule:
 
         if pp_type is None:
             pp_mask = [False] * len(charges)
-        if pp_mask is None:
+        elif pp_mask is None:
             pp_mask = [True] * len(charges)
 
         assert len(pp_mask) == len(charges), "Incompatible shape of 'pp_mask' given!"
-        pp_mask = jnp.array(pp_mask)
 
         unit_multiplier = {'bohr': 1.0, 'angstrom': angstrom}[unit]
         set_attr(
@@ -122,27 +120,13 @@ class Molecule:
             charges=1.0 * jnp.asarray(charges, dtype=jnp.int8),
             charge=charge,
             spin=spin,
-            pp_mask=pp_mask,
+            pp_mask=jnp.array(pp_mask),
             pp_type=pp_type,
             data=data or {},
         )
 
         # Derived properties
-        ns_core, pp_loc_params, pp_nl_params = [], [], []
-        for i, atomic_number in enumerate(charges):
-            if pp_mask[i]:
-                n_core, pp_loc_param, pp_nl_param = load_pp_param(
-                    atomic_number, pp_type
-                )
-                ns_core.append(n_core)
-                pp_loc_params.append(pp_loc_param)
-                pp_nl_params.append(pp_nl_param)
-            else:
-                ns_core.append(0)
-                pp_loc_params.append(jnp.zeros((3, 2, 2)))
-                pp_nl_params.append(jnp.asarray([]))
-        ns_core = jnp.array(ns_core)
-        pp_loc_params = jnp.array(pp_loc_params)
+        ns_core, pp_loc_params, pp_nl_params = parse_pp_params(self)
 
         n_elec = int(sum(charges) - sum(ns_core) - charge)
         assert not (n_elec + spin) % 2
@@ -155,7 +139,7 @@ class Molecule:
             ns_core=ns_core,
             pp_loc_params=pp_loc_params,
             pp_nl_params=pp_nl_params,
-            any_pp=any(pp_mask),
+            any_pp=any(self.pp_mask),
         )
 
         shells = [get_shell(z) for z in self.charges]
