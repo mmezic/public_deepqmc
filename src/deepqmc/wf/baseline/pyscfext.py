@@ -92,34 +92,42 @@ def parse_pp_params(mol):
 
     ns_core, pp_loc_params, pp_nl_params = [], [], []
     max_number_of_same_type_terms = []
-    for atomic_number in mol.charges:
-        _, data = gto.M(
-            atom=[(int(atomic_number), jnp.array([0, 0, 0]))],
-            spin=atomic_number % 2,
-            basis='6-31G',
-            ecp=mol.pp_type,
-        )._ecp.popitem()
-        pp_loc_param = data[1][0][1][1:4]
-        if data[0] != 0:
-            pp_nl_param = jnp.array([di[1][2] for di in data[1][1:]]).swapaxes(-1, -2)
-        else:
-            pp_nl_param = jnp.array([])
+    for i, atomic_number in enumerate(mol.charges):
+        if mol.pp_mask[i]:
+            _, data = gto.M(
+                atom=[(int(atomic_number), jnp.array([0, 0, 0]))],
+                spin=atomic_number % 2,
+                basis='6-31G',
+                ecp=mol.pp_type,
+            )._ecp.popitem()
+            pp_loc_param = data[1][0][1][1:4]
+            if data[0] != 0:
+                pp_nl_param = jnp.array([di[1][2] for di in data[1][1:]]).swapaxes(
+                    -1, -2
+                )
+            else:
+                pp_nl_param = jnp.array([])
 
-        max_number_of_same_type_terms.append(len(max(pp_loc_param, key=len)))
-        ns_core.append(data[0])
+            max_number_of_same_type_terms.append(len(max(pp_loc_param, key=len)))
+            n_core = data[0]
+        else:
+            n_core = 0
+            pp_loc_param = [[], [], []]
+            pp_nl_param = jnp.asarray([])
+        ns_core.append(n_core)
         pp_loc_params.append(pp_loc_param)
         pp_nl_params.append(pp_nl_param)
 
     ns_core = jnp.asarray(ns_core)
 
     # We need to pad local parameters with zeros to be able to
-    # store them in a single jnp.array.
-    pad = max(max_number_of_same_type_terms)
-    temp = []
+    # convert pp_loc params from list to jnp.array.
+    pad = max(max_number_of_same_type_terms, default=0)
+    pp_loc_param_padded = []
     for pp_loc_param in pp_loc_params:
         pp_loc_param = [pi + [[0, 0]] * (pad - len(pi)) for pi in pp_loc_param]
-        temp.append(jnp.swapaxes(jnp.array(pp_loc_param), -1, -2))
+        pp_loc_param_padded.append(jnp.swapaxes(jnp.array(pp_loc_param), -1, -2))
         # shape (r^n term, coefficient (β) & exponent (α), no. of terms with the same n)
-    pp_loc_params = jnp.array(temp)
+    pp_loc_params = jnp.array(pp_loc_param_padded)
 
     return ns_core, pp_loc_params, pp_nl_params
