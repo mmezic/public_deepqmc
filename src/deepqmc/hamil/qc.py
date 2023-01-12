@@ -9,7 +9,6 @@ from ..physics import (
     local_potential,
     nonlocal_energy,
     nuclear_energy,
-    nuclear_potential,
     pairwise_distance,
 )
 from ..utils import argmax_random_choice
@@ -38,7 +37,7 @@ class MolecularHamiltonian(Hamiltonian):
         self.mol = mol
         self.elec_std = elec_std
 
-    def init_sample(self, rng, n, elec_std=None):
+    def init_sample(self, rng, n):
         r"""
         Guess some initial electron positions.
 
@@ -51,11 +50,9 @@ class MolecularHamiltonian(Hamiltonian):
         Args:
             rng (jax.random.PRNGKey): key used for PRNG.
             n (int): the number of configurations to generate.
-            elec_std (float): optional, a factor for scaling the spread of
                 electrons around the nuclei.
         """
         rng_remainder, rng_normal, rng_spin = random.split(rng, 3)
-        elec_std = elec_std or self.elec_std
         valence_electrons = self.mol.ns_valence - self.mol.charge / self.mol.n_nuc
         base = jnp.floor(valence_electrons).astype(jnp.int32)
         prob = valence_electrons - base
@@ -89,7 +86,7 @@ class MolecularHamiltonian(Hamiltonian):
             )
         idxs = jnp.stack(idxs)
         centers = self.mol.coords[idxs]
-        std = elec_std * jnp.sqrt(self.mol.charges)[idxs][..., None]
+        std = self.elec_std * jnp.sqrt(self.mol.charges)[idxs][..., None]
         rs = centers + std * random.normal(rng_normal, centers.shape)
         return rs
 
@@ -132,25 +129,14 @@ class MolecularHamiltonian(Hamiltonian):
             Es_kin = -0.5 * (lap_log_psis + (quantum_force**2).sum(axis=-1))
             Es_nuc = nuclear_energy(mol)
             Vs_el = electronic_potential(r)
-
+            Vs_loc = local_potential(r, mol)
+            Es_loc = Es_kin + Vs_loc + Vs_el + Es_nuc
+            stats = {'hamil/V_el': Vs_el, 'hamil/E_kin': Es_kin, 'hamil/V_loc': Vs_loc}
             if mol.any_pp:
-                Vs_loc = local_potential(r, mol)
                 Es_nl = nonlocal_energy(r, mol, state, wf)
-                Es_loc = Es_kin + Vs_loc + Vs_el + Es_nuc + Es_nl
-                stats = {
-                    'hamil/V_el': Vs_el,
-                    'hamil/E_kin': Es_kin,
-                    'hamil/V_loc': Vs_loc,
-                    'hamil/E_nl': Es_nl,
-                }
-            else:
-                Vs_nuc = nuclear_potential(r, mol)
-                Es_loc = Es_kin + Vs_nuc + Vs_el + Es_nuc
-                stats = {
-                    'hamil/V_el': Vs_el,
-                    'hamil/E_kin': Es_kin,
-                    'hamil/V_nuc': Vs_nuc,
-                }
+                Es_loc += Es_nl
+                stats = {**stats, 'hamil/E_nl': Es_nl}
+
             result = (Es_loc, quantum_force) if return_grad else Es_loc
             return result, stats
 

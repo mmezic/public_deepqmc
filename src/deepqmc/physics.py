@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 from scipy.special import legendre
 
-from .utils import triu_flat
+from .utils import rot_y, rot_z, sph2cart, triu_flat
 
 __all__ = ()
 
@@ -37,11 +37,6 @@ def nuclear_energy(mol):
     return coulombs.sum()
 
 
-def nuclear_potential(rs, mol):
-    dists = pairwise_distance(rs, mol.coords)
-    return -(mol.charges / dists).sum(axis=(-1, -2))
-
-
 def electronic_potential(rs):
     dists = pairwise_self_distance(rs)
     return (1 / dists).sum(axis=-1)
@@ -59,12 +54,14 @@ def local_potential(rs, mol):
     dists = pairwise_distance(rs, mol.coords)
     Z_eff = mol.charges - mol.ns_core  # effective charge of the nuclei
     effective_coulomb_potential = -(Z_eff / dists).sum(axis=(-1, -2))
+    if not mol.any_pp:
+        return effective_coulomb_potential
+
     loc_params = mol.pp_loc_params
     idxs = mol.pp_mask  # indices of atoms for whom we use pseudopotential
 
     r_en = dists[:, idxs]  # electron-nucleus distances for all electrons and PP nuclei
 
-    # eq. (4) from [Burkatzki et al. 2007]
     coulomb_term = jnp.einsum(
         'ij,ki->kji', loc_params[idxs, 0, 1, :], 1 / r_en
     ) * jnp.exp(jnp.einsum('ij,ki->kji', -loc_params[idxs, 0, 0, :], r_en**2))
@@ -84,18 +81,6 @@ def local_potential(rs, mol):
     pseudopotential = (coulomb_term + const_term + linear_term).sum(axis=(-1, -2, -3))
 
     return effective_coulomb_potential + pseudopotential
-
-
-@jax.vmap
-def sph2cart(sph, r=1):
-    # This function transforms from spherical to cartesian coordinates.
-    theta = sph[0]
-    phi = sph[1]
-    rsin_theta = r * jnp.sin(theta)
-    x = rsin_theta * jnp.cos(phi)
-    y = rsin_theta * jnp.sin(phi)
-    z = r * jnp.cos(theta)
-    return jnp.array([x, y, z])
 
 
 @jax.jit
@@ -128,25 +113,9 @@ def get_quadrature_points(nucleus_position, rs):
     theta = jnp.arccos((rs - nucleus_position)[..., 2] / norm)
     phi = jnp.arctan2((rs - nucleus_position)[..., 1], (rs - nucleus_position)[..., 0])
 
-    # rotation matrix about y-axis by angle theta
-    y_rot = jnp.array(
-        [
-            [jnp.cos(theta), jnp.zeros_like(theta), jnp.sin(theta)],
-            [jnp.zeros_like(theta), jnp.ones_like(theta), jnp.zeros_like(theta)],
-            [-jnp.sin(theta), jnp.zeros_like(theta), jnp.cos(theta)],
-        ]
-    )
-    y_rot = jnp.moveaxis(y_rot, -1, -3)  # shape: (3,3,num_e) -> (num_e,3,3)
+    y_rot = jnp.moveaxis(rot_y(theta), -1, -3)  # shape: (3,3,num_e) -> (num_e,3,3)
 
-    # rotation matrix about z-axis by angle phi
-    z_rot = jnp.array(
-        [
-            [jnp.cos(phi), -jnp.sin(phi), jnp.zeros_like(phi)],
-            [jnp.sin(phi), jnp.cos(phi), jnp.zeros_like(phi)],
-            [jnp.zeros_like(phi), jnp.zeros_like(phi), jnp.ones_like(phi)],
-        ]
-    )
-    z_rot = jnp.moveaxis(z_rot, -1, -3)  # shape: (3,3,num_e) -> (num_e,3,3)
+    z_rot = jnp.moveaxis(rot_z(phi), -1, -3)  # shape: (3,3,num_e) -> (num_e,3,3)
 
     # auxiliary function applying the rotation and translation to be vmapped
     def transform_coordinates(norm, z_rot, y_rot, r, nucleus_position):
