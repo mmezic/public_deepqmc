@@ -146,8 +146,8 @@ def get_quadrature_points(nucleus_position, rs):
     return quadrature_rs
 
 
-def nonlocal_energy(rs, mol, state, wf):
-    r"""Calculate the non-local contribution to local energy.
+def nonlocal_potential(rs, mol, state, wf):
+    r"""Calculate the non-local term of the pseudopotential.
 
     Formulas are based on data from [Burkatzki et al. 2007] or
     [Annaberdiyev et al. 2018]. Numerical calculation of integrals is based
@@ -171,7 +171,7 @@ def nonlocal_energy(rs, mol, state, wf):
     # vmap over 12 integration quadrature points
     wf_vmapped = jax.vmap(wf, in_axes=(None, 0), out_axes=(0))
 
-    total_nl_energy = 0
+    total_nl_potential = 0
     for nucleus_index in range(mol.n_nuc):
         nl_params = mol.pp_nl_params[nucleus_index]
         if nl_params.size == 0:
@@ -200,7 +200,7 @@ def nonlocal_energy(rs, mol, state, wf):
             jnp.exp(-jnp.einsum('ij,kj->ikj', (dists**2), nl_params[:, 0, :])),
         ).sum(axis=-1)
 
-        def nl_energy_for_one_nucleus_and_one_electron(
+        def nl_potential_for_one_nucleus_and_one_electron(
             i,
             val,
             quadrature_rs=quadrature_rs,
@@ -218,20 +218,20 @@ def nonlocal_energy(rs, mol, state, wf):
             num_integral_one_e = jnp.sum(wf_ratio_tile, axis=-2)  # shape (1,)
             coef = coefs[i]  # shape (l_max,)
             nl_pot_coef = nl_pot_coefs[i]  # shape (1,)
-            nl_energy_one_e = jnp.sum(
+            nl_potential_one_e = jnp.sum(
                 nl_pot_coef * coef * num_integral_one_e, axis=(-1,)
             )  # shape ()
-            return val + nl_energy_one_e
+            return val + nl_potential_one_e
 
-        nl_energy_for_one_nucleus = jax.lax.fori_loop(
+        nl_potential_for_one_nucleus = jax.lax.fori_loop(
             0,
             mol.ns_valence.astype(int).sum(),
-            nl_energy_for_one_nucleus_and_one_electron,
+            nl_potential_for_one_nucleus_and_one_electron,
             0.0,
         )
-        total_nl_energy += nl_energy_for_one_nucleus
+        total_nl_potential += nl_potential_for_one_nucleus
 
-    return total_nl_energy
+    return total_nl_potential
 
 
 def laplacian(f):

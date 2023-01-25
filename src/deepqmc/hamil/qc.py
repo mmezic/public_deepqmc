@@ -7,7 +7,7 @@ from ..physics import (
     electronic_potential,
     laplacian,
     local_potential,
-    nonlocal_energy,
+    nonlocal_potential,
     nuclear_energy,
     pairwise_distance,
 )
@@ -133,9 +133,9 @@ class MolecularHamiltonian(Hamiltonian):
             Es_loc = Es_kin + Vs_loc + Vs_el + Es_nuc
             stats = {'hamil/V_el': Vs_el, 'hamil/E_kin': Es_kin, 'hamil/V_loc': Vs_loc}
             if mol.any_pp:
-                Es_nl = nonlocal_energy(r, mol, state, wf)
-                Es_loc += Es_nl
-                stats = {**stats, 'hamil/E_nl': Es_nl}
+                Vs_nl = nonlocal_potential(r, mol, state, wf)
+                Es_loc += Vs_nl
+                stats = {**stats, 'hamil/V_nl': Vs_nl}
 
             result = (Es_loc, quantum_force) if return_grad else Es_loc
             return result, stats
