@@ -2,7 +2,8 @@ from typing import Optional
 
 import jax
 import jax.numpy as jnp
-from pyscf import gto
+from pyscf.gto.basis import load_ecp
+from pyscf.lib.parameters import ELEMENTS
 from scipy.special import legendre
 
 from ..physics import pairwise_distance
@@ -37,17 +38,11 @@ def parse_gaussian_type_ecp_params(charges, ecp_type, ecp_mask):
     max_number_of_same_type_terms = []
     for i, atomic_number in enumerate(charges):
         if ecp_mask[i]:
-            pyscf_mole = gto.M(
-                atom=[(int(atomic_number), jnp.array([0, 0, 0]))],
-                # spin is just a placeholder, ecp parameters don't depend on the spin
-                spin=atomic_number % 2,
-                ecp=ecp_type,
-            )
-            assert len(pyscf_mole._ecp) == 1, (
+            data = load_ecp(ecp_type, [ELEMENTS[int(atomic_number)]])
+            assert data, (
                 f'Effective core potential of type {ecp_type} not found for'
-                f' {pyscf_mole._atom[0][0]} atom.'
+                f' {ELEMENTS[atomic_number]} atom.'
             )
-            _, data = pyscf_mole._ecp.popitem()
             ecp_loc_param = data[1][0][1][1:4]
             if len(data[1]) > 1:
                 ecp_nl_param = jnp.array([di[1][2] for di in data[1][1:]]).swapaxes(
