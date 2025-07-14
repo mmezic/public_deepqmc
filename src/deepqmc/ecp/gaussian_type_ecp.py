@@ -41,7 +41,7 @@ def parse_gaussian_type_ecp_params(charges, ecp_type, ecp_mask):
             data = load_ecp(ecp_type, [ELEMENTS[int(atomic_number)]])
             assert data, (
                 f'Effective core potential of type {ecp_type} not found for'
-                f' {ELEMENTS[atomic_number]} atom.'
+                f' {ELEMENTS[int(atomic_number)]} atom.'
             )
             ecp_loc_param = data[1][0][1][1:4]
             if len(data[1]) > 1:
